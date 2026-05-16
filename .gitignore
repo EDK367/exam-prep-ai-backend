@@ -1,0 +1,122 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.venv/
+ENV/
+env/
+
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# FastAPI / Uvicorn
+# =========================
+*.log
+logs/
+uvicorn.log
+
+# =========================
+# Celery
+# =========================
+celerybeat-schedule
+celerybeat.pid
+
+# =========================
+# Pytest
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# =========================
+# MyPy / Ruff / Type Checking
+# =========================
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# =========================
+# IDEs
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Mac / Linux / Windows
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Database
+# =========================
+*.sqlite3
+*.db
+
+# =========================
+# Alembic
+# =========================
+alembic/versions/*.pyc
+
+# =========================
+# Docker
+# =========================
+docker-data/
+*.tar
+
+# =========================
+# Uploaded files
+# =========================
+uploads/
+temp/
+tmp/
+
+# =========================
+# AI / Embeddings / Cache
+# =========================
+vector_cache/
+embeddings_cache/
+.cache/
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# Secrets
+# =========================
+secrets/
+credentials.json
+service-account.json
+
+# =========================
+# Node (si luego agregas frontend)
+# =========================
+node_modules/
+
+# =========================
+# Build
+# =========================
+dist/
+build/
+
+# =========================
+# Misc
+# =========================
+*.bak
+*.tmp
