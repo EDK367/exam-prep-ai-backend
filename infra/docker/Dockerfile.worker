@@ -1,0 +1,28 @@
+# infra/docker/Dockerfile.worker
+FROM python:3.12-slim as base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    libpq-dev gcc build-essential \
+    poppler-utils tesseract-ocr \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python dependencies
+COPY pyproject.toml ./
+RUN pip install uv && uv pip install --system .
+
+COPY . .
+
+# Non-root user
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+CMD ["celery", "-A", "app.workers.celery_app", "worker", "-Q", "documents,ai,notifications", "-c", "4", "-l", "INFO"]

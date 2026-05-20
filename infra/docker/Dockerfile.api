@@ -1,0 +1,45 @@
+# infra/docker/Dockerfile.api
+FROM python:3.12-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# System dependencies - AÑADIR libmagic1
+RUN apt-get update && apt-get install -y \
+    libpq-dev gcc build-essential \
+    poppler-utils tesseract-ocr \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only pyproject.toml first for dependency installation
+COPY pyproject.toml .
+
+# Create minimal package structure if needed
+RUN mkdir -p app && touch app/__init__.py
+
+# Install dependencies
+RUN pip install uv && uv pip install --system .
+
+
+# Copy the rest of the application
+COPY . .
+
+# Install dependencies
+RUN pip install uv && uv pip install --system .
+
+# Pre-download tiktoken encoding (requires internet at build time, not at runtime)
+RUN python -c "import tiktoken; tiktoken.encoding_for_model('gpt-4o')"
+
+# Copy the rest of the application
+COPY . .
+
+# Non-root user
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Cambiar el CMD por defecto (quitamos el CMD de aquí)
+# CMD ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info"]
