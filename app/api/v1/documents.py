@@ -2,10 +2,12 @@
 Document API endpoints.
 Handles upload, listing, processing, status, and deletion.
 """
+import io
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, UploadFile, File, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -93,6 +95,23 @@ async def get_document_detail(
     """Get a document with all its chunks."""
     return await document_service.get_document_with_chunks(
         db, document_id, current_user.id
+    )
+
+
+@router.get("/{document_id}/file")
+async def get_document_file(
+    document_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream the original PDF for in-app preview."""
+    file_bytes, filename, mime_type = await document_service.get_document_file(
+        db, document_id, current_user.id
+    )
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type=mime_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
 
 

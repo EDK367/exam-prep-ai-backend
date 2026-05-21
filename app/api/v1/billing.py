@@ -33,6 +33,7 @@ async def get_usage_stats(
     """Get detailed usage statistics for the current billing period."""
     limits = await subscription_service.get_user_limits(db, current_user.id)
     usage = await bitacora_service.get_monthly_usage(db, current_user.id)
+    daily_usage = await bitacora_service.get_daily_usage(db, current_user.id)
 
     from app.modules.documents.repository import document_repo
     from app.modules.tests.repository import test_repo
@@ -48,6 +49,7 @@ async def get_usage_stats(
                 "used": usage["total_tokens"],
                 "max": limits["max_tokens"],
                 "remaining": max(0, limits["max_tokens"] - usage["total_tokens"]),
+                "today": daily_usage["total_tokens"],
             },
             "uploads": {
                 "used": upload_count,

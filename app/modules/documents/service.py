@@ -188,6 +188,16 @@ class DocumentService:
     ) -> Document:
         return await document_repo.verify_ownership(db, document_id, user_id)
 
+    async def get_document_file(
+        self, db: AsyncSession, document_id: UUID, user_id: UUID
+    ) -> tuple[bytes, str, str]:
+        """Download raw PDF bytes for viewing (ownership verified)."""
+        doc = await document_repo.verify_ownership(db, document_id, user_id)
+        if not doc.storage_path:
+            raise NotFoundError("Document file not found")
+        file_bytes = await storage_backend.download(doc.storage_path)
+        return file_bytes, doc.filename, doc.mime_type or "application/pdf"
+
     async def get_document_with_chunks(
         self, db: AsyncSession, document_id: UUID, user_id: UUID
     ) -> Document:

@@ -46,7 +46,7 @@ class TestStatus(str, Enum):
             cls.GENERATING: [cls.READY, cls.FAILED],
             cls.READY: [cls.IN_PROGRESS],
             cls.IN_PROGRESS: [cls.COMPLETED],
-            cls.COMPLETED: [],  # terminal
+            cls.COMPLETED: [cls.READY],  # allow retake
             cls.FAILED: [cls.GENERATING],  # allow retry
         }
 

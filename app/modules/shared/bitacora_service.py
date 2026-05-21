@@ -69,6 +69,14 @@ class BitacoraRepository(BaseRepository[Bitacora]):
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         return await self.get_usage_since(db, user_id, start_of_month)
 
+    async def get_daily_usage(
+        self, db: AsyncSession, user_id: UUID
+    ) -> dict:
+        """Get usage for the current calendar day (UTC)."""
+        now = datetime.utcnow()
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return await self.get_usage_since(db, user_id, start_of_day)
+
 
 class BitacoraService:
     """Service for logging and querying AI usage."""
@@ -161,6 +169,11 @@ class BitacoraService:
         self, db: AsyncSession, user_id: UUID
     ) -> dict:
         return await self.repo.get_monthly_usage(db, user_id)
+
+    async def get_daily_usage(
+        self, db: AsyncSession, user_id: UUID
+    ) -> dict:
+        return await self.repo.get_daily_usage(db, user_id)
 
     async def check_token_budget(
         self, db: AsyncSession, user_id: UUID, max_tokens: int
