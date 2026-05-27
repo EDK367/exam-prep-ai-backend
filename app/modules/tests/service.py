@@ -45,6 +45,11 @@ class TestService:
         max_tests: int = 100,
         max_tokens: Optional[int] = None,
         model: str = "deepseek/deepseek-v4-flash:free",
+        plan_name: str = "Free",
+        hard_mode: bool = False,
+        concept_mode: bool = False,
+        multiple_answers: bool = False,
+        no_go_back: bool = False,
     ) -> Test:
         """
         Create a test from a processed document:
@@ -69,13 +74,31 @@ class TestService:
         if current_test_count >= max_tests:
             raise PlanLimitExceededError("tests", current_test_count, max_tests)
 
+        # Plan limits validation for hard mode
+        if plan_name.lower() == "free" and question_count > 10:
+            raise PlanLimitExceededError("questions", question_count, 10)
+            
+        if hard_mode:
+            if plan_name.lower() in ["free", "pro"]:
+                raise PlanLimitExceededError("hard_mode", 1, 0)
+            # Enforce min 10 questions for hard mode
+            question_count = max(10, question_count)
+            
         # Create test record
+        test_config = {
+            "hard_mode": hard_mode,
+            "concept_mode": concept_mode,
+            "multiple_answers": multiple_answers,
+            "no_go_back": no_go_back,
+        }
+        
         test = Test(
             title=title or f"Examen: {doc.filename}",
             user_id=user_id,
             document_id=document_id,
             test_template_id=template_id,
             status=TestStatus.DRAFT.value,
+            config=test_config,
         )
         test = await test_repo.create(db, test)
 
@@ -88,21 +111,21 @@ class TestService:
             chunk_texts = [c.content for c in chunks]
 
             # Generate exam via AI
+            kwargs = {
+                "question_count": question_count,
+                "difficulty": difficulty,
+                "model": model,
+                "max_tokens_budget": max_tokens,
+                "concept_mode": concept_mode,
+                "multiple_answers": multiple_answers,
+            }
             if len(chunk_texts) == 1:
                 exam_data = await content_generation_service.generate_exam(
-                    db, user_id, chunk_texts[0],
-                    question_count=question_count,
-                    difficulty=difficulty,
-                    model=model,
-                    max_tokens_budget=max_tokens,
+                    db, user_id, chunk_texts[0], **kwargs
                 )
             else:
                 exam_data = await content_generation_service.generate_exam_from_chunks(
-                    db, user_id, chunk_texts,
-                    question_count=question_count,
-                    difficulty=difficulty,
-                    model=model,
-                    max_tokens_budget=max_tokens,
+                    db, user_id, chunk_texts, **kwargs
                 )
 
             # Update title if AI provided one
@@ -173,19 +196,93 @@ class TestService:
         if not test_with_q or not test_with_q.questions:
             raise ValidationError("Test has no questions")
 
+        total = len(test_with_q.questions)
+
+        import asyncio
+        
         # Build question lookup
         question_map = {str(q.id): q for q in test_with_q.questions}
 
+        # Gather concept tasks for concurrent execution to prevent timeouts
+        concept_tasks = []
+        concept_indices = []
+        
+        for i, answer in enumerate(answers):
+            q_id = str(answer["question_id"])
+            if q_id not in question_map:
+                continue
+            question = question_map[q_id]
+            user_answer = answer["response_text"]
+            
+            if question.questions_type == "open_question":
+                concept_tasks.append(
+                    content_generation_service.evaluate_concept_answer(
+                        None, user_id, 
+                        question.content.get("question", ""),
+                        str(user_answer),
+                        str(question.content.get("correct_answer", ""))
+                    )
+                )
+                concept_indices.append(i)
+                
+        concept_results_map = {}
+        if concept_tasks:
+            # We use gather to evaluate all concept questions in parallel (safe because db is None)
+            concept_results = await asyncio.gather(*concept_tasks)
+            
+            # Now sequentially perform database logging using the db session
+            from app.modules.shared.bitacora_service import bitacora_service
+            for res in concept_results:
+                try:
+                    if res.get("ai_response") is not None:
+                        await bitacora_service.log_from_ai_response(
+                            db, user_id, res["ai_response"], request_type="evaluation_generation"
+                        )
+                    elif res.get("error") is not None:
+                        await bitacora_service.log_failure(
+                            db, user_id,
+                            model="deepseek/deepseek-v4-flash:free",
+                            error_message=res["error"],
+                            request_type="evaluation_generation"
+                        )
+                except Exception as log_exc:
+                    logger.error("failed_to_log_usage_to_bitacora", error=str(log_exc))
+
+            concept_results_map = {idx: res for idx, res in zip(concept_indices, concept_results)}
+
         # Grade each answer
         graded_responses = []
-        for answer in answers:
+        # Calculate score dynamically
+        total_points = 0.0
+        earned_points = 0.0
+        
+        for i, answer in enumerate(answers):
             q_id = str(answer["question_id"])
             if q_id not in question_map:
                 continue
 
             question = question_map[q_id]
             user_answer = answer["response_text"]
-            is_correct = self._grade_answer(question, user_answer)
+            
+            # Use AI grading for concept mode (open_question)
+            if question.questions_type == "open_question":
+                eval_result = concept_results_map[i]
+                is_correct = eval_result["is_correct"]
+                score_val = eval_result["score"]
+                # Save the explanation back to the content so the user can see it
+                if not question.content:
+                    question.content = {}
+                
+                # SQLAlchemy JSON mutations sometimes require reassignment to trigger update
+                new_content = dict(question.content)
+                new_content["explanation"] = eval_result["explanation"]
+                question.content = new_content
+            else:
+                is_correct = self._grade_answer(question, user_answer)
+                score_val = 1.0 if is_correct else 0.0
+
+            total_points += 1.0
+            earned_points += score_val
 
             graded_responses.append({
                 "question_id": question.id,
@@ -197,9 +294,9 @@ class TestService:
         await user_response_repo.bulk_create(db, graded_responses)
 
         # Calculate score
-        total = len(test_with_q.questions)
+        score_percent = (earned_points / total_points * 100) if total_points > 0 else 0
+        
         correct = sum(1 for r in graded_responses if r["is_correct"])
-        score_percent = (correct / total * 100) if total > 0 else 0
 
         # Update test
         await test_repo.update(db, test, {"score": score_percent})
@@ -342,6 +439,15 @@ class TestService:
             return user_str == correct_str
 
         if q_type == "multiple_choice":
+            if isinstance(correct, list):
+                if isinstance(user_answer, list) and "options" in content:
+                    options = content["options"]
+                    # user_answer is list of indices
+                    selected = [options[i] for i in user_answer if isinstance(i, int) and 0 <= i < len(options)]
+                    # Exact match of selections vs correct
+                    return set(selected) == set(correct)
+                return False
+
             if isinstance(user_answer, int) and "options" in content:
                 options = content["options"]
                 if 0 <= user_answer < len(options):

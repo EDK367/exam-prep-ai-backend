@@ -30,6 +30,8 @@ class Test(Base, UUIDMixin, TimestampMixin):
     test_template_id = Column(UUID(as_uuid=True), ForeignKey('test_templates.id'), nullable=True)
     score = Column(Float, nullable=True)
     error_message = Column(Text, nullable=True)
+    config = Column(JSON, nullable=True)
+
 
     user = relationship("User", back_populates="tests")
     document = relationship("Document", backref="tests")

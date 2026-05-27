@@ -35,6 +35,8 @@ class ContentGenerationService:
         difficulty: str = "medium",
         model: str = "deepseek/deepseek-v4-flash:free",
         max_tokens_budget: Optional[int] = None,
+        concept_mode: bool = False,
+        multiple_answers: bool = False,
     ) -> dict:
         """Generate a complete exam from text content."""
 
@@ -48,7 +50,13 @@ class ContentGenerationService:
                     "tokens", budget["total_tokens"], max_tokens_budget
                 )
 
-        prompt = PROMPTS["exam_generation"].format(
+        prompt_base = PROMPTS["exam_generation"]
+        if concept_mode:
+            prompt_base += "\n- Para 'concept_mode', incluye preguntas de tipo 'open_question' donde 'correct_answer' sea la idea principal."
+        if multiple_answers:
+            prompt_base += "\n- Para 'multiple_answers', incluye opciones múltiples con tipo 'multiple_choice' donde 'correct_answer' sea un array (lista) de las respuestas correctas, ejemplo: [\"Opción A\", \"Opción C\"]."
+            
+        prompt = prompt_base.format(
             text=text,
             question_count=question_count,
             difficulty=difficulty,
@@ -88,6 +96,8 @@ class ContentGenerationService:
         difficulty: str = "medium",
         model: str = "deepseek/deepseek-v4-flash:free",
         max_tokens_budget: Optional[int] = None,
+        concept_mode: bool = False,
+        multiple_answers: bool = False,
     ) -> dict:
         """Generate exam from multiple text chunks, combining results."""
         all_questions = []
@@ -104,6 +114,8 @@ class ContentGenerationService:
                     difficulty=difficulty,
                     model=model,
                     max_tokens_budget=max_tokens_budget,
+                    concept_mode=concept_mode,
+                    multiple_answers=multiple_answers,
                 )
                 if i == 0 and "title" in result:
                     title = result["title"]
@@ -224,6 +236,70 @@ class ContentGenerationService:
             )
             raise
 
+    # ── Concept Mode Evaluation ──────────────────────────────────────────
+
+    async def evaluate_concept_answer(
+        self,
+        db: Optional[AsyncSession],
+        user_id: UUID,
+        question: str,
+        user_answer: str,
+        correct_answer: str,
+        *,
+        model: str = "deepseek/deepseek-v4-flash:free",
+    ) -> dict:
+        """Evaluate an open concept question response."""
+        prompt = f"""Eres un profesor evaluando una respuesta abierta.
+        
+PREGUNTA: {question}
+RESPUESTA ESPERADA: {correct_answer}
+RESPUESTA DEL ESTUDIANTE: {user_answer}
+
+INSTRUCCIONES:
+1. Evalúa si la respuesta del estudiante captura la idea principal de la respuesta esperada.
+2. Asigna un puntaje de 0.0 a 1.0 (1.0 = perfecta, 0.5 = parcialmente correcta, 0.0 = incorrecta).
+3. Proporciona una breve explicación de la calificación.
+
+FORMATO (SOLO JSON):
+{{
+    "score": 0.8,
+    "is_correct": true,  // true si el score es >= 0.6
+    "explanation": "Buena comprensión, pero faltó mencionar X."
+}}
+"""
+        try:
+            parsed, ai_response = await ai_client.chat_json(
+                messages=[{"role": "user", "content": prompt}],
+                model=model,
+                temperature=0.1,
+            )
+
+            if db is not None:
+                await bitacora_service.log_from_ai_response(
+                    db, user_id, ai_response, request_type="evaluation_generation"
+                )
+
+            return {
+                "score": float(parsed.get("score", 0.0)),
+                "is_correct": bool(parsed.get("is_correct", False)),
+                "explanation": str(parsed.get("explanation", "")),
+                "ai_response": ai_response,
+            }
+
+        except AIServiceError as exc:
+            if db is not None:
+                await bitacora_service.log_failure(
+                    db, user_id, model=model, error_message=str(exc),
+                    request_type="evaluation_generation",
+                )
+            return {
+                "score": 0.0,
+                "is_correct": False,
+                "explanation": "Error evaluating response.",
+                "ai_response": None,
+                "error": str(exc),
+            }
+
     # ── Response Validation ──────────────────────────────────────────────
 
     @staticmethod
@@ -251,7 +327,10 @@ class ContentGenerationService:
             if "options" in q:
                 validated_q["options"] = [str(o) for o in q["options"]]
             if "correct_answer" in q:
-                validated_q["correct_answer"] = str(q["correct_answer"])
+                if isinstance(q["correct_answer"], list):
+                    validated_q["correct_answer"] = [str(a) for a in q["correct_answer"]]
+                else:
+                    validated_q["correct_answer"] = str(q["correct_answer"])
             if "explanation" in q:
                 validated_q["explanation"] = str(q["explanation"])
 

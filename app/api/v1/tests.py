@@ -48,6 +48,11 @@ async def create_test(
         max_tests=limits["max_tests"],
         max_tokens=limits["max_tokens"],
         model=limits["model"],
+        plan_name=limits.get("plan_name", "Free"),
+        hard_mode=request.hard_mode,
+        concept_mode=request.concept_mode,
+        multiple_answers=request.multiple_answers,
+        no_go_back=request.no_go_back,
     )
     return test
 

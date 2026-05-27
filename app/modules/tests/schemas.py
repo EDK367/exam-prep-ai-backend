@@ -20,6 +20,12 @@ class CreateTestRequest(BaseModel):
     template_id: Optional[UUID] = None
     include_flashcards: bool = False
     include_summary: bool = False
+    
+    # Hard mode configs
+    hard_mode: bool = False
+    concept_mode: bool = False
+    multiple_answers: bool = False
+    no_go_back: bool = False
 
 
 class SubmitAnswerRequest(BaseModel):
@@ -68,6 +74,7 @@ class TestResponse(BaseModel):
     user_id: UUID
     test_template_id: Optional[UUID] = None
     question_count: Optional[int] = None
+    config: Optional[dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 

@@ -78,9 +78,9 @@ async def get_all_plans(db: AsyncSession = Depends(get_db)):
     if not plans:
         # Create default plans if they don't exist
         default_plans = [
-            Plan(name="Free", max_tokens=50000, max_uploads=5, max_test=10, max_text=100000, model="deepseek/deepseek-v4-flash:free"),
-            Plan(name="Plus", max_tokens=250000, max_uploads=50, max_test=50, max_text=500000, model="gpt-4o"),
-            Plan(name="Pro", max_tokens=500000, max_uploads=100, max_test=100, max_text=1000000, model="gpt-4o")
+            Plan(name="FREE", max_tokens=50000, max_uploads=5, max_test=10, max_text=100000, model="deepseek/deepseek-v4-flash:free"),
+            Plan(name="PLUS", max_tokens=250000, max_uploads=50, max_test=50, max_text=500000, model="gpt-4o"),
+            Plan(name="PRO", max_tokens=500000, max_uploads=100, max_test=100, max_text=1000000, model="gpt-4o")
         ]
         db.add_all(default_plans)
         await db.commit()
@@ -99,13 +99,19 @@ async def change_plan(
     """Simulate changing a user's plan."""
     plan = await plan_repo.get_by_name(db, plan_name)
     if not plan:
+        plan = await plan_repo.get_by_name(db, plan_name.upper())
+    if not plan:
+        plan = await plan_repo.get_by_name(db, plan_name.capitalize())
+        
+    is_free = plan_name.lower() == "free"
+    if not plan:
         plan = Plan(
-            name=plan_name,
-            max_tokens=500000 if plan_name != "Free" else 50000,
-            max_uploads=100 if plan_name != "Free" else 5,
-            max_test=100 if plan_name != "Free" else 10,
-            max_text=1000000 if plan_name != "Free" else 100000,
-            model="gpt-4o" if plan_name != "Free" else "deepseek/deepseek-v4-flash:free",
+            name=plan_name.upper(),
+            max_tokens=50000 if is_free else 500000,
+            max_uploads=5 if is_free else 100,
+            max_test=10 if is_free else 100,
+            max_text=100000 if is_free else 1000000,
+            model="deepseek/deepseek-v4-flash:free" if is_free else "gpt-4o",
         )
         db.add(plan)
         await db.commit()

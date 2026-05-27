@@ -88,14 +88,14 @@ class SubscriptionService:
         sub = await self.sub_repo.get_active_by_user(db, user_id)
 
         if not sub or not sub.plan:
-            return {**FREE_TIER_LIMITS, "plan_name": "Free", "is_active": True}
+            return {**FREE_TIER_LIMITS, "plan_name": "FREE", "is_active": True}
 
         # Check expiration
         if sub.expires_at and sub.expires_at < datetime.utcnow():
             await self.sub_repo.update(
                 db, sub, {"status": SubscriptionStatus.EXPIRED.value}
             )
-            return {**FREE_TIER_LIMITS, "plan_name": "Free (Expired)", "is_active": False}
+            return {**FREE_TIER_LIMITS, "plan_name": "FREE (Expired)", "is_active": False}
 
         plan = sub.plan
         return {
@@ -155,7 +155,9 @@ class SubscriptionService:
         self, db: AsyncSession, user_id: UUID
     ) -> UserSubscription:
         """Create a free tier subscription for a new user."""
-        free_plan = await self.plan_repo.get_by_name(db, "Free")
+        free_plan = await self.plan_repo.get_by_name(db, "FREE")
+        if not free_plan:
+            free_plan = await self.plan_repo.get_by_name(db, "Free")
         if not free_plan:
             logger.warning("free_plan_not_found")
             return None
