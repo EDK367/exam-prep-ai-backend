@@ -8,38 +8,38 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# System dependencies - AÑADIR libmagic1
-RUN apt-get update && apt-get install -y \
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev gcc build-essential \
     poppler-utils tesseract-ocr \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only pyproject.toml first for dependency installation
+# Install uv for dependency management
+RUN pip install --no-cache-dir uv
+
+# Copy package metadata first for dependency caching
 COPY pyproject.toml .
 
-# Create minimal package structure if needed
+# Create minimal package structure
 RUN mkdir -p app && touch app/__init__.py
 
-# Install dependencies
-RUN pip install uv && uv pip install --system .
+# Install python dependencies
+RUN uv pip install --system -e .
 
-
-# Copy the rest of the application
-COPY . .
-
-# Install dependencies
-RUN pip install uv && uv pip install --system .
-
-# Pre-download tiktoken encoding (requires internet at build time, not at runtime)
+# Pre-download tiktoken encoding (requires internet at build time)
 RUN python -c "import tiktoken; tiktoken.encoding_for_model('gpt-4o')"
 
-# Copy the rest of the application
+# Copy application source code
 COPY . .
 
-# Non-root user
+# Re-sync package installation with full source
+RUN uv pip install --system -e .
+
+# Non-root user for security
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Cambiar el CMD por defecto (quitamos el CMD de aquí)
-# CMD ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info"]
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

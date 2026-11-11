@@ -20,7 +20,8 @@ class UserFactory(factory.alchemy.SQLAlchemyModelFactory):
     id = factory.LazyFunction(uuid.uuid4)
     email = factory.Sequence(lambda n: f"user{n}@example.com")
     name = factory.Faker("name")
-    hashed_password = "fake_password"
+    supabase_id = factory.Sequence(lambda n: f"supabase_{n}")
+    is_active = True
 
 
 class PlanFactory(factory.alchemy.SQLAlchemyModelFactory):
@@ -35,7 +36,6 @@ class PlanFactory(factory.alchemy.SQLAlchemyModelFactory):
     max_uploads = 100
     max_test = 50
     model = "gpt-4o"
-    price = 10.0
 
 
 class UserSubscriptionFactory(factory.alchemy.SQLAlchemyModelFactory):

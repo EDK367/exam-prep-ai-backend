@@ -30,7 +30,7 @@ class SupabaseJWTValidator:
             if settings.APP_ENV == 'development':
                 logger.warning(
                     "JWT signature verification failed. Bypassing because APP_ENV=development. "
-                    "Please check your SUPABASE_JWT_SECRET in .env.development!"
+                    "Please check your SUPABASE_JWT_SECRET in .env!"
                 )
                 try:
                     payload = jwt.get_unverified_claims(token)

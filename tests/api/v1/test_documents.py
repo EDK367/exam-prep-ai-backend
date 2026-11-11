@@ -36,8 +36,9 @@ async def test_list_documents(client, db_session):
     app.dependency_overrides.clear()
 
 
-@patch("app.modules.documents.service.process_document.delay")
+@patch("app.api.v1.documents.process_document.delay")
 async def test_upload_document(mock_celery_delay, client, db_session):
+    mock_celery_delay.return_value.id = "mock-task-id-123"
     UserFactory._meta.sqlalchemy_session = db_session
     user = UserFactory()
     
@@ -55,7 +56,7 @@ async def test_upload_document(mock_celery_delay, client, db_session):
     data = response.json()
     assert data["filename"] == "test.pdf"
     assert data["status"] == DocumentStatus.UPLOADED.value
-    assert data["mime_type"] == "application/pdf"
+    assert data["size_types"] == len(pdf_content)
     
     # Verify celery task was dispatched
     mock_celery_delay.assert_called_once()

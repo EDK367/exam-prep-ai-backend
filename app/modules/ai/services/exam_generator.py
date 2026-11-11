@@ -2,14 +2,12 @@ import json
 import os
 import time
 import requests
-from dotenv import load_dotenv
+from app.core.config import settings
 from app.modules.ai.services.split_text import split_text
-
-load_dotenv()
 
 class ExamGeneratorService:
     def __init__(self):
-        self.api_key = os.getenv("OPENROUTER_API_KEY")
+        self.api_key = settings.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY")
         self.api_url = "https://openrouter.ai/api/v1/chat/completions"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",

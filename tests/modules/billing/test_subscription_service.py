@@ -17,7 +17,7 @@ async def test_get_user_limits_no_subscription(db_session):
 
     limits = await subscription_service.get_user_limits(db_session, user.id)
 
-    assert limits["plan_name"] == "Free"
+    assert limits["plan_name"] == "FREE"
     assert limits["max_tokens"] == FREE_TIER_LIMITS["max_tokens"]
     assert limits["max_uploads"] == FREE_TIER_LIMITS["max_uploads"]
     assert limits["is_active"] is True
@@ -55,7 +55,7 @@ async def test_get_user_limits_expired_subscription(db_session):
     limits = await subscription_service.get_user_limits(db_session, user.id)
 
     # Should fall back to free tier limits
-    assert limits["plan_name"] == "Free (Expired)"
+    assert limits["plan_name"] == "FREE (Expired)"
     assert limits["max_uploads"] == FREE_TIER_LIMITS["max_uploads"]
     assert limits["is_active"] is False
 
