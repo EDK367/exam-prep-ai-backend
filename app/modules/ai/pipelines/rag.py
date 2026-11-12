@@ -34,7 +34,7 @@ class RAGPipeline:
         messages = self._build_messages(question, context, conversation_history)
         response = await self.llm.chat(
             messages=messages,
-            model='gpt-4o',
+            model='liquid/lfm-2.5-2.6b:free',
             temperature=0.1,
             max_tokens=2000,
         )

@@ -130,20 +130,20 @@ class AIClient:
             "temperature": temperature,
         }
 
-        # Handle free tier models and paid fallback to prevent 402/rate-limit downtime
-        if not model or model.endswith(":free") or model in ("openrouter/free", "default") or "deepseek" in model or "gpt" in model:
-            target_model = (
-                self.DEFAULT_MODEL
-                if ("deepseek" in model or "gpt" in model or model in ("openrouter/free", "default"))
-                else model
-            )
-            candidate_models = [target_model]
-            for fallback in FREE_MODELS_FALLBACK:
-                if fallback not in candidate_models and len(candidate_models) < 3:
-                    candidate_models.append(fallback)
-            payload["models"] = candidate_models[:3]
+        # ENFORCE STRICTLY FREE OPENROUTER MODELS ONLY (PROTOTYPE MODE)
+        # Any model that does not explicitly end with ':free' is mapped to DEFAULT_MODEL
+        if not model or not str(model).endswith(":free"):
+            target_model = self.DEFAULT_MODEL
         else:
-            payload["model"] = model
+            target_model = str(model)
+
+        candidate_models = [target_model]
+        for fallback in FREE_MODELS_FALLBACK:
+            if fallback not in candidate_models and len(candidate_models) < 3:
+                candidate_models.append(fallback)
+        payload["models"] = candidate_models[:3]
+        if "model" in payload:
+            del payload["model"]
 
         # Default max_tokens to 3000 to prevent OpenRouter assuming full model context (16k) which triggers 402
         if max_tokens is not None:
