@@ -96,17 +96,17 @@ async def change_plan(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Simulate changing a user's plan."""
-    plan = await plan_repo.get_by_name(db, plan_name)
-    if not plan:
-        plan = await plan_repo.get_by_name(db, plan_name.upper())
-    if not plan:
-        plan = await plan_repo.get_by_name(db, plan_name.capitalize())
-        
-    is_free = plan_name.lower() == "free"
+    """Change user's plan and persist directly to the database."""
+    from sqlalchemy import select, func
+    
+    clean_name = plan_name.strip()
+    result = await db.execute(select(Plan).where(func.lower(Plan.name) == clean_name.lower()))
+    plan = result.scalars().first()
+    
+    is_free = clean_name.lower() == "free"
     if not plan:
         plan = Plan(
-            name=plan_name.upper(),
+            name=clean_name.upper(),
             max_tokens=50000 if is_free else 500000,
             max_uploads=5 if is_free else 100,
             max_test=10 if is_free else 100,
@@ -122,7 +122,8 @@ async def change_plan(
         await subscription_repo.update(db, sub, {
             "plan_id": plan.id,
             "status": SubscriptionStatus.ACTIVE.value,
-            "expires_at": datetime.utcnow() + timedelta(days=30)
+            "starter_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(days=30),
         })
     else:
         new_sub = UserSubscription(
@@ -130,9 +131,14 @@ async def change_plan(
             plan_id=plan.id,
             status=SubscriptionStatus.ACTIVE.value,
             starter_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(days=30)
+            expires_at=datetime.utcnow() + timedelta(days=30),
         )
         db.add(new_sub)
         await db.commit()
 
-    return {"success": True, "message": f"Plan changed to {plan_name}"}
+    limits = await subscription_service.get_user_limits(db, current_user.id)
+    return {
+        "success": True,
+        "message": f"Plan actualizado exitosamente a {plan.name}",
+        "data": limits,
+    }

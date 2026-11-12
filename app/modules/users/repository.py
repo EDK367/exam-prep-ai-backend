@@ -1,20 +1,34 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from app.modules.users.models import User
+from app.modules.billing.models import UserSubscription
 from app.modules.users.schemas import UserCreate, UserUpdate
 
 class UserRepository:
     async def get_by_id(self, db: AsyncSession, user_id: str) -> Optional[User]:
-        result = await db.execute(select(User).where(User.id == user_id))
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.subscription).selectinload(UserSubscription.plan))
+            .where(User.id == user_id)
+        )
         return result.scalars().first()
 
     async def get_by_supabase_id(self, db: AsyncSession, supabase_id: str) -> Optional[User]:
-        result = await db.execute(select(User).where(User.supabase_id == supabase_id))
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.subscription).selectinload(UserSubscription.plan))
+            .where(User.supabase_id == supabase_id)
+        )
         return result.scalars().first()
 
     async def get_by_email(self, db: AsyncSession, email: str) -> Optional[User]:
-        result = await db.execute(select(User).where(User.email == email))
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.subscription).selectinload(UserSubscription.plan))
+            .where(User.email == email)
+        )
         return result.scalars().first()
 
     async def create(self, db: AsyncSession, obj_in: UserCreate) -> User:
