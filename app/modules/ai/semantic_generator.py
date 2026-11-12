@@ -307,3 +307,4 @@ class SemanticExamGenerator:
             "correct_answer": [correct1, correct2],
             "explanation": f"Ambas afirmaciones corresponden a especificaciones directas del documento.",
         }
+
