@@ -8,7 +8,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import TestStatus, DocumentStatus
-from app.core.exceptions import ValidationError, NotFoundError, PlanLimitExceededError
+from app.core.exceptions import ValidationError, NotFoundError, PlanLimitExceededError, AIServiceError
 from app.modules.ai.content_service import content_generation_service
 from app.modules.documents.repository import document_repo, chunk_repo
 from app.modules.tests.models import Test
@@ -44,7 +44,7 @@ class TestService:
         template_id: Optional[UUID] = None,
         max_tests: int = 100,
         max_tokens: Optional[int] = None,
-        model: str = "deepseek/deepseek-v4-flash:free",
+        model: str = "liquid/lfm-2.5-2.6b:free",
         plan_name: str = "Free",
         hard_mode: bool = False,
         concept_mode: bool = False,
@@ -135,7 +135,7 @@ class TestService:
             # Save questions
             questions = exam_data.get("questions", [])
             if not questions:
-                raise ValidationError("AI generated no questions")
+                raise AIServiceError("El servicio de IA no devolvió preguntas válidas para este documento.")
 
             await question_repo.bulk_create(db, test.id, questions)
 
@@ -241,7 +241,7 @@ class TestService:
                     elif res.get("error") is not None:
                         await bitacora_service.log_failure(
                             db, user_id,
-                            model="deepseek/deepseek-v4-flash:free",
+                            model="liquid/lfm-2.5-2.6b:free",
                             error_message=res["error"],
                             request_type="evaluation_generation"
                         )

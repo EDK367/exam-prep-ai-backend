@@ -33,7 +33,7 @@ class ContentGenerationService:
         *,
         question_count: int = 10,
         difficulty: str = "medium",
-        model: str = "deepseek/deepseek-v4-flash:free",
+        model: str = "liquid/lfm-2.5-2.6b:free",
         max_tokens_budget: Optional[int] = None,
         concept_mode: bool = False,
         multiple_answers: bool = False,
@@ -94,7 +94,7 @@ class ContentGenerationService:
         *,
         question_count: int = 10,
         difficulty: str = "medium",
-        model: str = "deepseek/deepseek-v4-flash:free",
+        model: str = "liquid/lfm-2.5-2.6b:free",
         max_tokens_budget: Optional[int] = None,
         concept_mode: bool = False,
         multiple_answers: bool = False,
@@ -131,6 +131,11 @@ class ContentGenerationService:
                 )
                 continue
 
+        if not all_questions:
+            raise AIServiceError(
+                "No se pudieron generar preguntas a partir del documento. Verifique que el archivo tenga texto legible."
+            )
+
         return {"title": title, "questions": all_questions[:question_count]}
 
     # ── Flashcard Generation ─────────────────────────────────────────────
@@ -142,7 +147,7 @@ class ContentGenerationService:
         text: str,
         *,
         count: int = 15,
-        model: str = "deepseek/deepseek-v4-flash:free",
+        model: str = "liquid/lfm-2.5-2.6b:free",
     ) -> dict:
         """Generate flashcards from text content."""
         prompt = PROMPTS["flashcard_generation"].format(text=text, count=count)
@@ -175,7 +180,7 @@ class ContentGenerationService:
         user_id: UUID,
         text: str,
         *,
-        model: str = "deepseek/deepseek-v4-flash:free",
+        model: str = "liquid/lfm-2.5-2.6b:free",
     ) -> dict:
         """Generate a structured summary from text content."""
         prompt = PROMPTS["summary_generation"].format(text=text)
@@ -209,7 +214,7 @@ class ContentGenerationService:
         question: str,
         context: str,
         *,
-        model: str = "deepseek/deepseek-v4-flash:free",
+        model: str = "liquid/lfm-2.5-2.6b:free",
     ) -> dict:
         """Generate a detailed explanation for a question."""
         prompt = PROMPTS["explanation_generation"].format(
@@ -246,7 +251,7 @@ class ContentGenerationService:
         user_answer: str,
         correct_answer: str,
         *,
-        model: str = "deepseek/deepseek-v4-flash:free",
+        model: str = "liquid/lfm-2.5-2.6b:free",
     ) -> dict:
         """Evaluate an open concept question response."""
         prompt = f"""Eres un profesor evaluando una respuesta abierta.

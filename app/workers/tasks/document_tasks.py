@@ -157,7 +157,7 @@ def generate_test(
     document_id: str,
     question_count: int = 10,
     difficulty: str = "medium",
-    model: str = "deepseek/deepseek-v4-flash:free",
+    model: str = "liquid/lfm-2.5-2.6b:free",
 ) -> dict:
     """Background task for AI-powered test generation."""
     logger.info(

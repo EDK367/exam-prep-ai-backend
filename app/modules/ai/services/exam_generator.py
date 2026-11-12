@@ -73,7 +73,7 @@ class ExamGeneratorService:
             self.api_url,
             headers=self.headers,
             json={
-                "model": "deepseek/deepseek-v4-flash:free",
+                "model": "liquid/lfm-2.5-2.6b:free",
                 "messages": [
                     {"role": "user", "content": prompt}
                 ]

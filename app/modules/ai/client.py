@@ -22,11 +22,23 @@ logger = structlog.get_logger(__name__)
 # Cost per 1K tokens by model
 COST_PER_1K_TOKENS = {
     "openrouter/free": {"input": 0.0, "output": 0.0},
+    "liquid/lfm-2.5-2.6b:free": {"input": 0.0, "output": 0.0},
+    "liquid/lfm-3-1.7b:free": {"input": 0.0, "output": 0.0},
+    "nvidia/nemotron-3-ultra-550b-a55b:free": {"input": 0.0, "output": 0.0},
+    "nvidia/nemotron-3.5-lightning:free": {"input": 0.0, "output": 0.0},
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {"input": 0.0, "output": 0.0},
+    "baidu/ernie-5.5-flash-preview:free": {"input": 0.0, "output": 0.0},
     "deepseek/deepseek-v4-flash:free": {"input": 0.0, "output": 0.0},
     "gpt-4o": {"input": 0.005, "output": 0.015},
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
     "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
 }
+
+FREE_MODELS_FALLBACK = [
+    "liquid/lfm-2.5-2.6b:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "baidu/ernie-5.5-flash-preview:free",
+]
 
 
 class AIResponse:
@@ -68,7 +80,7 @@ class AIClient:
     - Streaming support
     """
 
-    DEFAULT_MODEL = "deepseek/deepseek-v4-flash:free"
+    DEFAULT_MODEL = "liquid/lfm-2.5-2.6b:free"
     DEFAULT_TIMEOUT = 60
     MAX_RETRIES = 3
     BASE_RETRY_DELAY = 2  # seconds
@@ -111,12 +123,28 @@ class AIClient:
     ) -> AIResponse:
         """
         Send a chat completion request with automatic retries.
+        Automatically leverages fallback models for free tier to prevent 404/rate-limit downtime.
         """
-        payload = {
-            "model": model,
+        payload: dict[str, Any] = {
             "messages": messages,
             "temperature": temperature,
         }
+
+        # Handle free tier models with OpenRouter models array (up to 3 items)
+        if model.endswith(":free") or model in ("openrouter/free", "default") or "deepseek" in model:
+            target_model = (
+                self.DEFAULT_MODEL
+                if "deepseek" in model or model in ("openrouter/free", "default")
+                else model
+            )
+            candidate_models = [target_model]
+            for fallback in FREE_MODELS_FALLBACK:
+                if fallback not in candidate_models and len(candidate_models) < 3:
+                    candidate_models.append(fallback)
+            payload["models"] = candidate_models[:3]
+        else:
+            payload["model"] = model
+
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
         if response_format:
@@ -218,7 +246,7 @@ class AIClient:
             usage = data.get("usage", {})
             return AIResponse(
                 content=choice.get("message", {}).get("content") or "",
-                model=data.get("model", payload.get("model", "unknown")),
+                model=data.get("model") or payload.get("model") or (payload.get("models") or ["unknown"])[0],
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),
                 total_tokens=usage.get("total_tokens", 0),

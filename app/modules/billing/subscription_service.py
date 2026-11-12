@@ -29,7 +29,7 @@ FREE_TIER_LIMITS = {
     "max_uploads": 5,
     "max_tests": 10,
     "max_text": 100000,
-    "model": "deepseek/deepseek-v4-flash:free",
+    "model": "liquid/lfm-2.5-2.6b:free",
 }
 
 
