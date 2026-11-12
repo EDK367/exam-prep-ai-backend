@@ -95,6 +95,7 @@ class TestResultResponse(BaseModel):
     score_percent: float
     passed: bool
     passing_score: float
+    has_pending_evaluations: bool = False
     questions: list[QuestionWithAnswerResponse] = Field(default_factory=list)
 
 

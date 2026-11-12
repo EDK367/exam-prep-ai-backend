@@ -52,7 +52,7 @@ class ContentGenerationService:
 
         prompt_base = PROMPTS["exam_generation"]
         if concept_mode:
-            prompt_base += "\n- Para 'concept_mode', incluye preguntas de tipo 'open_question' donde 'correct_answer' sea la idea principal."
+            prompt_base += "\n- Para 'concept_mode', incluye preguntas de redacción conceptual con 'type': 'open_question' donde 'question' pida al estudiante redactar o explicar un concepto técnico clave (ej: 'Explique qué es...'), 'correct_answer' sea la respuesta modelo o esperada explicativa completa, y 'options' sea []."
         if multiple_answers:
             prompt_base += "\n- Para 'multiple_answers', incluye opciones múltiples con tipo 'multiple_choice' donde 'correct_answer' sea un array (lista) de las respuestas correctas, ejemplo: [\"Opción A\", \"Opción C\"]."
             
@@ -329,8 +329,10 @@ FORMATO (SOLO JSON):
                 "type": q.get("type", "multiple_choice"),
             }
 
-            if "options" in q:
+            if "options" in q and isinstance(q["options"], list):
                 validated_q["options"] = [str(o) for o in q["options"]]
+            elif validated_q["type"] == "open_question":
+                validated_q["options"] = []
             if "correct_answer" in q:
                 if isinstance(q["correct_answer"], list):
                     validated_q["correct_answer"] = [str(a) for a in q["correct_answer"]]
