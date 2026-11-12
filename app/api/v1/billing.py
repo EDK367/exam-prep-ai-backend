@@ -79,8 +79,8 @@ async def get_all_plans(db: AsyncSession = Depends(get_db)):
         # Create default plans if they don't exist
         default_plans = [
             Plan(name="FREE", max_tokens=50000, max_uploads=5, max_test=10, max_text=100000, model="liquid/lfm-2.5-2.6b:free"),
-            Plan(name="PLUS", max_tokens=250000, max_uploads=50, max_test=50, max_text=500000, model="gpt-4o"),
-            Plan(name="PRO", max_tokens=500000, max_uploads=100, max_test=100, max_text=1000000, model="gpt-4o")
+            Plan(name="PLUS", max_tokens=250000, max_uploads=50, max_test=50, max_text=500000, model="liquid/lfm-2.5-2.6b:free"),
+            Plan(name="PRO", max_tokens=500000, max_uploads=100, max_test=100, max_text=1000000, model="liquid/lfm-2.5-2.6b:free")
         ]
         db.add_all(default_plans)
         await db.commit()
@@ -111,7 +111,7 @@ async def change_plan(
             max_uploads=5 if is_free else 100,
             max_test=10 if is_free else 100,
             max_text=100000 if is_free else 1000000,
-            model="liquid/lfm-2.5-2.6b:free" if is_free else "gpt-4o",
+            model="liquid/lfm-2.5-2.6b:free",
         )
         db.add(plan)
         await db.commit()

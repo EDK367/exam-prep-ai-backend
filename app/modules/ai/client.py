@@ -130,11 +130,11 @@ class AIClient:
             "temperature": temperature,
         }
 
-        # Handle free tier models with OpenRouter models array (up to 3 items)
-        if model.endswith(":free") or model in ("openrouter/free", "default") or "deepseek" in model:
+        # Handle free tier models and paid fallback to prevent 402/rate-limit downtime
+        if not model or model.endswith(":free") or model in ("openrouter/free", "default") or "deepseek" in model or "gpt" in model:
             target_model = (
                 self.DEFAULT_MODEL
-                if "deepseek" in model or model in ("openrouter/free", "default")
+                if ("deepseek" in model or "gpt" in model or model in ("openrouter/free", "default"))
                 else model
             )
             candidate_models = [target_model]
@@ -145,8 +145,12 @@ class AIClient:
         else:
             payload["model"] = model
 
+        # Default max_tokens to 3000 to prevent OpenRouter assuming full model context (16k) which triggers 402
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        else:
+            payload["max_tokens"] = 3000
+
         if response_format:
             payload["response_format"] = response_format
 
@@ -174,6 +178,15 @@ class AIClient:
                 await self._sleep(delay)
             except AIServiceError as exc:
                 last_error = exc
+                err_str = str(exc).lower()
+                # If credits error (402) or model not found (404), switch payload to free models immediately
+                if "402" in err_str or "credits" in err_str or "404" in err_str or "afford" in err_str:
+                    logger.warning("ai_credits_or_model_error_falling_back_to_free", error=str(exc))
+                    if "model" in payload:
+                        del payload["model"]
+                    payload["models"] = FREE_MODELS_FALLBACK[:3]
+                    payload["max_tokens"] = 2500
+
                 if attempt < self.max_retries:
                     delay = self._backoff_delay(attempt)
                     logger.warning(
@@ -243,9 +256,11 @@ class AIClient:
 
         try:
             choice = data["choices"][0]
+            msg = choice.get("message", {})
+            content = msg.get("content") or msg.get("text") or choice.get("text") or msg.get("reasoning") or ""
             usage = data.get("usage", {})
             return AIResponse(
-                content=choice.get("message", {}).get("content") or "",
+                content=content,
                 model=data.get("model") or payload.get("model") or (payload.get("models") or ["unknown"])[0],
                 input_tokens=usage.get("prompt_tokens", 0),
                 output_tokens=usage.get("completion_tokens", 0),
@@ -265,8 +280,12 @@ class AIClient:
             
         text = content.strip()
 
-        # Strip markdown code fences
-        if text.startswith("```"):
+        # Strip markdown code fences with regex if present
+        import re
+        fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+        if fence_match:
+            text = fence_match.group(1).strip()
+        elif text.startswith("```"):
             lines = text.split("\n")
             lines = lines[1:]  # Remove opening fence
             if lines and lines[-1].strip() == "```":

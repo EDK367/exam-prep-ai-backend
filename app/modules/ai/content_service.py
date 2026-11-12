@@ -27,7 +27,7 @@ class ContentGenerationService:
 
     async def generate_exam(
         self,
-        db: AsyncSession,
+        db: Optional[AsyncSession],
         user_id: UUID,
         text: str,
         *,
@@ -40,8 +40,8 @@ class ContentGenerationService:
     ) -> dict:
         """Generate a complete exam from text content."""
 
-        # Check budget if applicable
-        if max_tokens_budget:
+        # Check budget if applicable and db is available
+        if max_tokens_budget and db is not None:
             budget = await bitacora_service.check_token_budget(
                 db, user_id, max_tokens_budget
             )
@@ -69,21 +69,25 @@ class ContentGenerationService:
                 temperature=0.3,
             )
 
-            # Log usage
-            await bitacora_service.log_from_ai_response(
-                db, user_id, ai_response, request_type="exam_generation"
-            )
+            # Log usage if session provided
+            if db is not None:
+                await bitacora_service.log_from_ai_response(
+                    db, user_id, ai_response, request_type="exam_generation"
+                )
 
-            return self._validate_exam_response(parsed)
+            res = self._validate_exam_response(parsed)
+            res["ai_response"] = ai_response
+            return res
 
         except AIServiceError as exc:
-            await bitacora_service.log_failure(
-                db,
-                user_id,
-                model=model,
-                error_message=str(exc),
-                request_type="exam_generation",
-            )
+            if db is not None:
+                await bitacora_service.log_failure(
+                    db,
+                    user_id,
+                    model=model,
+                    error_message=str(exc),
+                    request_type="exam_generation",
+                )
             raise
 
     async def generate_exam_from_chunks(
@@ -99,37 +103,68 @@ class ContentGenerationService:
         concept_mode: bool = False,
         multiple_answers: bool = False,
     ) -> dict:
-        """Generate exam from multiple text chunks, combining results."""
+        """Generate exam from multiple text chunks, combining results concurrently."""
+        import asyncio
+
+        # Check budget once before concurrent calls
+        if max_tokens_budget and db is not None:
+            budget = await bitacora_service.check_token_budget(
+                db, user_id, max_tokens_budget
+            )
+            if not budget["is_within_budget"]:
+                raise PlanLimitExceededError(
+                    "tokens", budget["total_tokens"], max_tokens_budget
+                )
+
         all_questions = []
         title = "Examen generado automáticamente"
-        questions_per_chunk = max(2, question_count // len(chunks))
+        
+        # Sample up to 3-4 chunks evenly across the document to prevent timeouts
+        if len(chunks) > 4:
+            step = len(chunks) / 4.0
+            indices = sorted(set(int(i * step) for i in range(4)))
+            selected_chunks = [chunks[i] for i in indices]
+        else:
+            selected_chunks = chunks
 
-        for i, chunk in enumerate(chunks):
-            try:
-                result = await self.generate_exam(
-                    db,
-                    user_id,
-                    chunk,
-                    question_count=questions_per_chunk,
-                    difficulty=difficulty,
-                    model=model,
-                    max_tokens_budget=max_tokens_budget,
-                    concept_mode=concept_mode,
-                    multiple_answers=multiple_answers,
-                )
-                if i == 0 and "title" in result:
-                    title = result["title"]
-                if "questions" in result:
-                    all_questions.extend(result["questions"])
-            except PlanLimitExceededError:
-                raise
-            except Exception as exc:
-                logger.warning(
-                    "chunk_exam_generation_failed",
-                    chunk_index=i,
-                    error=str(exc),
-                )
+        questions_per_chunk = max(2, (question_count + len(selected_chunks) - 1) // len(selected_chunks))
+
+        # Generate from selected chunks concurrently (passing db=None to prevent AsyncSession concurrency conflicts)
+        tasks = [
+            self.generate_exam(
+                None,
+                user_id,
+                chunk,
+                question_count=questions_per_chunk,
+                difficulty=difficulty,
+                model=model,
+                max_tokens_budget=max_tokens_budget,
+                concept_mode=concept_mode,
+                multiple_answers=multiple_answers,
+            )
+            for chunk in selected_chunks
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for i, res in enumerate(results):
+            if isinstance(res, Exception):
+                logger.warning("chunk_exam_generation_failed", chunk_index=i, error=str(res))
                 continue
+            if not title or title == "Examen generado automáticamente":
+                if res.get("title"):
+                    title = res["title"]
+            if "questions" in res and isinstance(res["questions"], list):
+                all_questions.extend(res["questions"])
+
+            # Sequentially log usage to bitacora with db session
+            if db is not None and res.get("ai_response"):
+                try:
+                    await bitacora_service.log_from_ai_response(
+                        db, user_id, res["ai_response"], request_type="exam_generation"
+                    )
+                except Exception as b_err:
+                    logger.warning("bitacora_log_error", error=str(b_err))
 
         if not all_questions:
             raise AIServiceError(
