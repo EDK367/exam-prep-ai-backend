@@ -160,6 +160,10 @@ class AIClient:
                 return await self._send_request(payload)
             except AIRateLimitError as exc:
                 last_error = exc
+                if getattr(exc, "is_daily_limit", False):
+                    # Daily quota for free tier exceeded on OpenRouter, do not sleep/retry
+                    logger.warning("ai_daily_rate_limit_exceeded", error=str(exc))
+                    raise exc
                 delay = self._backoff_delay(attempt, base=5)
                 logger.warning(
                     "ai_rate_limited",
@@ -236,7 +240,9 @@ class AIClient:
 
         if resp.status_code == 429:
             retry_after = resp.headers.get("retry-after")
-            raise AIRateLimitError(int(retry_after) if retry_after else None)
+            err_text = resp.text.lower()
+            is_daily = "free-models-per-day" in err_text or "openrouter_free_tier_daily" in err_text or "remaining\":0" in err_text
+            raise AIRateLimitError(int(retry_after) if retry_after else None, is_daily_limit=is_daily)
 
         if resp.status_code >= 500:
             raise AIServiceError(
@@ -274,39 +280,78 @@ class AIClient:
 
     @staticmethod
     def _parse_json_response(content: Optional[str]) -> dict:
-        """Extract JSON from AI response, handling markdown code fences."""
+        """Extract and resiliently repair JSON from AI response."""
         if not content:
             raise AIResponseParsingError("No content returned in AI response")
             
+        import re
         text = content.strip()
 
-        # Strip markdown code fences with regex if present
-        import re
-        fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+        # 1. Strip markdown code fences (even if missing closing fence)
+        fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)(?:```|$)', text)
         if fence_match:
-            text = fence_match.group(1).strip()
-        elif text.startswith("```"):
-            lines = text.split("\n")
-            lines = lines[1:]  # Remove opening fence
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
+            candidate = fence_match.group(1).strip()
+            if candidate:
+                text = candidate
 
-        # Find JSON boundaries
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start == -1 or end == 0:
-            # Try array
-            start = text.find("[")
+        # 2. Find JSON boundaries
+        start_brace = text.find("{")
+        start_bracket = text.find("[")
+        if start_brace == -1 and start_bracket == -1:
+            raise AIResponseParsingError("No JSON found in AI response")
+
+        if start_brace != -1 and (start_bracket == -1 or start_brace < start_bracket):
+            start = start_brace
+            end = text.rfind("}") + 1
+        else:
+            start = start_bracket
             end = text.rfind("]") + 1
 
-        if start == -1 or end == 0:
-            raise AIResponseParsingError(f"No JSON found in AI response")
+        json_slice = text[start:end] if end > start else text[start:]
+
+        # Direct parse attempt
+        try:
+            return json.loads(json_slice)
+        except json.JSONDecodeError:
+            pass
+
+        # Clean single-line comments and trailing commas before braces/brackets
+        cleaned = re.sub(r'//.*?\n', '\n', json_slice)
+        cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
 
         try:
-            return json.loads(text[start:end])
-        except json.JSONDecodeError as exc:
-            raise AIResponseParsingError(f"Invalid JSON in AI response: {exc}")
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # Handle truncated JSON arrays/objects
+        last_brace = cleaned.rfind("}")
+        if last_brace != -1:
+            truncated_attempt = cleaned[:last_brace + 1] + "\n]}"
+            truncated_attempt = re.sub(r',\s*([}\]])', r'\1', truncated_attempt)
+            try:
+                return json.loads(truncated_attempt)
+            except json.JSONDecodeError:
+                pass
+
+        # Regex fallback: extract questions blocks directly
+        q_matches = re.finditer(r'\"question\"\s*:\s*\"([^\"]+)\"', text)
+        extracted = []
+        for q_m in q_matches:
+            q_text = q_m.group(1).strip()
+            if q_text:
+                extracted.append({
+                    "question": q_text,
+                    "type": "multiple_choice",
+                    "options": [],
+                    "correct_answer": "",
+                    "explanation": "",
+                })
+
+        if extracted:
+            return {"title": "Examen generado", "questions": extracted}
+
+        raise AIResponseParsingError(f"Could not parse valid JSON from AI output: {text[:200]}")
 
     @staticmethod
     def _backoff_delay(attempt: int, base: float = 2) -> float:

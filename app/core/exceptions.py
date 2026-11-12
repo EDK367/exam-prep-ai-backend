@@ -134,9 +134,12 @@ class AIRateLimitError(AIServiceError):
     status_code = 429
     error_code = "AI_RATE_LIMITED"
 
-    def __init__(self, retry_after: int | None = None):
+    def __init__(self, retry_after: int | None = None, is_daily_limit: bool = False):
+        self.is_daily_limit = is_daily_limit
         message = "AI service rate limited"
-        if retry_after:
+        if is_daily_limit:
+            message = "AI service daily free quota limit reached"
+        elif retry_after:
             message += f", retry after {retry_after}s"
         super().__init__(message)
 
